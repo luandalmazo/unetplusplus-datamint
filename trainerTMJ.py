@@ -8,12 +8,8 @@ from learningRate import CyclicLR, WarmUpLR, CosineLR
 
 import os
 import numpy as np
-from ..config import TEMP_DIR
-from monsoonToolBox.filetools import pJoin
-from monsoonToolBox.arraytools.draw2d import Drawer2D
 import matplotlib.pyplot as plt
-
-
+    
 class UNetPPModule(L.LightningModule):
     """
     Lightning version of TrainerTMJ:
@@ -30,12 +26,11 @@ class UNetPPModule(L.LightningModule):
         self,
         num_classes: int = 4,
         encoder_name: str = "resnet50",
-        in_channels: int = 1,
+        # modified, before was in_channels = 1
+        in_channels: int = 3,
         learning_rate: float = 1e-4,
         total_epochs: int = 1000,
         weight_decay: float = 0.01,
-        prob_every: int = 5,
-        save_dir: str | None = None,
     ):
         super().__init__()
         self.save_hyperparameters()
@@ -71,14 +66,10 @@ class UNetPPModule(L.LightningModule):
         for stage, metric in self.dice_metrics.items():
             self.add_module(f"{stage}_dice_score", metric)
 
-        self.prob_every = prob_every
-        self.save_dir = save_dir or pJoin(TEMP_DIR, "ProbImgs")
-
         base_instance = CosineLR()
         cycle_instance = CyclicLR(cycle_at=[50, 200], lr_snippet=base_instance, decay=[0.5, 0.1])
         self.lr_instance = WarmUpLR(lr_instance=cycle_instance, warmup_frac=0.05)
 
-        self.prob_img = None
         self.prob_msk = None
 
     def setup(self, stage: str | None = None):
@@ -156,7 +147,7 @@ class UNetPPModule(L.LightningModule):
         if (self.current_epoch % self.prob_every) == 0:
             self._probImg()
 
-    def _probImg(self, flag: str = ""):
+    """ def _probImg(self, flag: str = ""):
         if self.prob_img is None or self.prob_msk is None:
             return
 
@@ -184,7 +175,7 @@ class UNetPPModule(L.LightningModule):
         plt.imsave(fname, compare_im)
 
         self.model.train()
-
+ """
     # ---------- optimizer + custom LR schedule ----------
     def configure_optimizers(self):
         optimizer = torch.optim.AdamW(

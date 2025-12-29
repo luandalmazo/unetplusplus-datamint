@@ -56,35 +56,33 @@ class TMJDataset2D(Dataset):
             use_cache=True
         )  
 
-        image = np.array(image).astype(np.float32)
+        img_np = image.pixel_array
+        original_height, original_width = img_np.shape[:2]
 
-        ''' Convert to grayscale if needed '''
-        if image.ndim == 3:
-            image = cv2.cvtColor(image, cv2.COLOR_RGB2GRAY)
-
+        # need to update this
+        image = np.array(image)
+                
         ''' Load segmentation masks (union if multiple) '''
         anns = self.resource_annotations[resource.id]
+        no_mask = False
+        
         if not anns:
-            raise RuntimeError(
-                f"No segmentation mask found for resource {resource.filename}"
-            )
+            mask = np.zeros((original_height, original_width), dtype=np.int64)
+        else:            
+            masks = []
+            for ann in anns:
+        
+                mask_img = ann.fetch_file_data(
+                    auto_convert=True,
+                    use_cache=True
+                )  
 
-        masks = []
-        for ann in anns:
-            mask_img = ann.fetch_file_data(
-                auto_convert=True,
-                use_cache=True
-            )  
+                mask = np.array(mask_img).astype(np.int64)
 
-            mask = np.array(mask_img).astype(np.int64)
+                masks.append(mask)
 
-            if mask.ndim == 3:
-                mask = cv2.cvtColor(mask, cv2.COLOR_RGB2GRAY)
-
-            masks.append(mask)
-
-        ''' Combine multiple masks into a single mask '''
-        mask = np.maximum.reduce(masks)
+            ''' Combine multiple masks into a single mask '''
+            mask = np.maximum.reduce(masks)
 
         ''' Normalization '''
         vmin = np.percentile(image, 1)
