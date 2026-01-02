@@ -56,11 +56,10 @@ class TMJDataset2D(Dataset):
             use_cache=True
         )  
 
-        img_np = image.pixel_array
-        original_height, original_width = img_np.shape[:2]
+        original_height, original_width = image.Rows, image.Columns
 
-        # need to update this
-        image = np.array(image)
+        image = image.pixel_array.astype(np.float32)
+        
                 
         ''' Load segmentation masks (union if multiple) '''
         anns = self.resource_annotations[resource.id]
