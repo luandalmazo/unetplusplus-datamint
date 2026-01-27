@@ -44,9 +44,6 @@ def main():
     
     print("Found", len(image_paths))
     
-    # -------------------------------
-    # Upload images as resources
-    # -------------------------------  
     
     print(f"Should upload images: {should_upload_images}")
     
@@ -60,9 +57,6 @@ def main():
         )
         print(f"Uploaded {len(uploaded_resources)} images to Datamint")
  
-    # -------------------------------
-    # Upload masks as segmentations
-    # -------------------------------
     print("Uploading segmentation masks...")
     all_resources = list(api.resources.get_list(project_name=PROJECT_NAME))
     filename_to_resource = {r.filename: r for r in all_resources}

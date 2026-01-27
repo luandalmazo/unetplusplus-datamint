@@ -4,13 +4,14 @@ from torch.utils.data import Dataset
 from collections import defaultdict
 import numpy as np
 import cv2
-
+import os
+import nibabel as nib
 import torchvision.transforms.functional as torchTF
 from torchvision.transforms.functional import InterpolationMode
 
 from datamint import Api
 
-PROJECT_NAME = "TMJ Study"
+PROJECT_NAME = "TMJ Test"
 NUM_CLASSES = 4
 
 api = Api()
@@ -22,17 +23,23 @@ class TMJDataset2D(Dataset):
         use_augmentation: bool = True,
     ):
         super().__init__()
-
+        self._mask_tmp_dir = os.path.join(
+            os.environ.get("SCRATCH", "/tmp"),
+            "tmj_mask_cache"
+        )
+        os.makedirs(self._mask_tmp_dir, exist_ok=True)
         self.num_classes = NUM_CLASSES
         self.augmentation = use_augmentation and (split == "train")
 
         ''' Data Loading from Datamint '''
-        self.resources = list(
+        self.resources = list(  
             api.resources.get_list(
                 project_name=PROJECT_NAME,
                 tags=[f"split:{split}"] if split else None,
             )
         )
+        
+        self._resource_map = {r.id: r for r in self.resources}
 
         ''' Load all segmentation annotations for the resources '''
         all_annotations = api.annotations.get_list(
@@ -41,55 +48,108 @@ class TMJDataset2D(Dataset):
         )
 
         self.resource_annotations = defaultdict(list)
+        
         for ann in all_annotations:
             self.resource_annotations[ann.resource_id].append(ann)
+            
+        self.slice_index = []
+        self._volume_cache = {}
+        self._mask_volume_cache = {}
+
+        for resource in self.resources:
+            vol = resource.fetch_file_data(auto_convert=True, use_cache=False)
+            vol_np = vol.get_fdata() if hasattr(vol, "get_fdata") else vol.pixel_array
+
+            if vol_np.ndim != 3:
+                raise RuntimeError(
+                    f"Resource {resource.filename} is not 3D (shape={vol_np.shape})"
+                )
+
+            num_slices = vol_np.shape[0]
+            self._volume_cache[resource.id] = vol_np
+
+            for z in range(num_slices):
+                self.slice_index.append((resource.id, z))
+
+        for resource_id, anns in self.resource_annotations.items():
+            self._mask_volume_cache[resource_id] = []
+
+            for ann in anns:
+                try:
+                    raw = ann.fetch_file_data(auto_convert=True, use_cache=True)
+
+                    if isinstance(raw, (bytes, bytearray)):
+                        tmp_path = os.path.join(
+                            self._mask_tmp_dir,
+                            f"{ann.id}.nii.gz"
+                        )
+
+                        if not os.path.exists(tmp_path):
+                            with open(tmp_path, "wb") as f:
+                                f.write(raw)
+
+                        nii = nib.load(tmp_path)
+                        data = nii.dataobj  
+                        vol = np.asarray(data)                        
+
+                    elif hasattr(raw, "get_fdata"):
+                        vol = raw.get_fdata()
+                    else:
+                        vol = np.asarray(raw)
+
+                    vol = np.asarray(vol, dtype=np.int64)
+                    self._mask_volume_cache[resource_id].append(vol)
+
+                except Exception as e:
+                    print(
+                        f"[WARN][MASK CACHE FAIL] "
+                        f"resource={resource_id} ann={ann.id} err={e}"
+                    )
 
     def __len__(self):
-        return len(self.resources)
+        return len(self.slice_index)
 
     def __getitem__(self, idx):
-        resource = self.resources[idx]
+        resource_id, slice_idx = self.slice_index[idx]
 
-        ''' Load image (PIL -> NumPy) '''
-        image = resource.fetch_file_data(
-            auto_convert=True,
-            use_cache=True
-        )  
+        ''' Get resource and cached volume '''
+        resource = self._resource_map[resource_id]
+        vol = self._volume_cache[resource_id]
 
-        original_height, original_width = image.Rows, image.Columns
+        image = vol[slice_idx, :, :].astype(np.float32)
 
-        image = image.pixel_array.astype(np.float32)
-        
-                
+        original_height, original_width = image.shape
+
         ''' Load segmentation masks (union if multiple) '''
-        anns = self.resource_annotations[resource.id]
-        no_mask = False
-        
-        if not anns:
+        cached_masks = self._mask_volume_cache.get(resource_id, [])
+
+        if not cached_masks:
             mask = np.zeros((original_height, original_width), dtype=np.int64)
-        else:            
+        else:
             masks = []
-            for ann in anns:
+
+            for vol in cached_masks:
+                if vol.ndim == 3:
+                    masks.append(vol[slice_idx])
+                elif vol.ndim == 2:
+                    masks.append(vol)
+
+            if len(masks) == 0:
+                mask = np.zeros((original_height, original_width), dtype=np.int64)
+            else:
+                mask = np.maximum.reduce(masks)
+
         
-                mask_img = ann.fetch_file_data(
-                    auto_convert=True,
-                    use_cache=True
-                )  
-
-                mask = np.array(mask_img).astype(np.int64)
-
-                masks.append(mask)
-
-            ''' Combine multiple masks into a single mask '''
-            mask = np.maximum.reduce(masks)
-
+        image = cv2.resize(image, (256, 256), interpolation=cv2.INTER_LINEAR)
+        mask  = cv2.resize(mask,  (256, 256), interpolation=cv2.INTER_NEAREST)
+        
         ''' Normalization '''
         vmin = np.percentile(image, 1)
         vmax = np.percentile(image, 99)
         image = np.clip(image, vmin, vmax)
         image = (image - vmin) / (vmax - vmin + 1e-8)
 
-        ''' Convert to torch tensors '''
+    
         image = torch.from_numpy(image).unsqueeze(0).float()  # (1, H, W)
         mask = torch.from_numpy(mask).long()                  # (H, W)
 
@@ -100,7 +160,7 @@ class TMJDataset2D(Dataset):
         return {
             "image": image,
             "mask": mask,
-            "filename": resource.filename,
+            "filename": f"{resource.filename}_z{slice_idx:03d}",
         }
 
     # ---------------------------------------------------------------------------------------------------------------------------------

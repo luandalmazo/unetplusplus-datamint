@@ -4,7 +4,9 @@ import torch.nn.functional as F
 from torch.autograd import Variable
 import numpy as np
 
-
+"""
+    Taken from: https://github.com/aswahd/TMJ-Disk-Dislocation-Classification/blob/main/UNetPPTMJ/dataloading/TMJDataset.py
+"""
 class FocalLoss(nn.Module):
     smooth = 1e-6
 
@@ -40,7 +42,7 @@ class FocalLoss(nn.Module):
         weights_shape = torch.ones(len(inputs.size()), dtype=int)
         weights_shape[0] = N
         weights_shape[1] = n_class
-        weights = weights.data.view(*weights_shape)
+        weights = weights.view(*weights_shape)
 
         if self.from_logits:
             y_pred = F.softmax(inputs, dim=1)
@@ -72,15 +74,13 @@ def oneHot(targets, n_classes, device="cpu"):
     """Targets: shape - [N, H, W]"""
     targets_extend = targets.clone()
     targets_extend.unsqueeze_(1)  # convert to Nx1xHxW
-    one_hot = (
-        torch.FloatTensor(
-            targets_extend.size(0),
-            n_classes,
-            targets_extend.size(2),
-            targets_extend.size(3),
-        )
-        .zero_()
-        .to(device)
+    one_hot = torch.zeros(
+        targets_extend.size(0),
+        n_classes,
+        targets_extend.size(2),
+        targets_extend.size(3),
+        device=device,
+        dtype=torch.float32,
     )
     one_hot.scatter_(1, targets_extend, 1)
     return one_hot

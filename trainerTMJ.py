@@ -5,10 +5,6 @@ from torchmetrics.segmentation import MeanIoU, GeneralizedDiceScore
 
 from losses import DiceLoss, FusionLoss, FocalLoss
 from learningRate import CyclicLR, WarmUpLR, CosineLR  
-
-import os
-import numpy as np
-import matplotlib.pyplot as plt
     
 class UNetPPModule(L.LightningModule):
     """
@@ -26,11 +22,10 @@ class UNetPPModule(L.LightningModule):
         self,
         num_classes: int = 4,
         encoder_name: str = "resnet50",
-        # modified, before was in_channels = 1
-        in_channels: int = 3,
+        in_channels: int = 1,
         learning_rate: float = 1e-4,
         total_epochs: int = 1000,
-        weight_decay: float = 0.01,
+        weight_decay: float = 1e-2,
     ):
         super().__init__()
         self.save_hyperparameters()
@@ -134,48 +129,6 @@ class UNetPPModule(L.LightningModule):
     def on_test_epoch_end(self):
         self._common_epoch_end("test")
 
-    # ---------- optional: prob image logging (like TrainerTMJ) ----------
-    def serveProbImgs(self, img: torch.Tensor, msk: torch.Tensor):
-        """
-        img: (1,H,W)
-        msk: (H,W)
-        """
-        self.prob_img = img
-        self.prob_msk = msk
-
-    def on_train_epoch_start(self):
-        if (self.current_epoch % self.prob_every) == 0:
-            self._probImg()
-
-    """ def _probImg(self, flag: str = ""):
-        if self.prob_img is None or self.prob_msk is None:
-            return
-
-        self.model.eval()
-        with torch.no_grad():
-            img = self.prob_img.unsqueeze(0).to(self.device)  # (1,1,H,W)
-            out = self.model(img)
-            pred_msk = out.argmax(dim=1)[0]  # (H,W)
-
-        im = self.prob_img[0].detach().cpu().numpy()
-        pred_msk = pred_msk.detach().cpu().numpy()
-        gt_msk = self.prob_msk.detach().cpu().numpy()
-
-        color_dict = {1: (255, 0, 0), 2: (0, 255, 0), 3: (0, 100, 255)}
-        compare_im = Drawer2D.visualCompareSegmentations(
-            im,
-            [gt_msk, pred_msk],
-            color_dict=color_dict,
-            alpha=0.5,
-            tags=["Ground truth", "Model prediction"],
-        )
-
-        os.makedirs(self.save_dir, exist_ok=True)
-        fname = pJoin(self.save_dir, f"epoch-{self.current_epoch}{flag}.png")
-        plt.imsave(fname, compare_im)
-
-        self.model.train()
- """
     # ---------- optimizer + custom LR schedule ----------
     def configure_optimizers(self):
         optimizer = torch.optim.AdamW(

@@ -1,2 +1,9 @@
 env/
 __pycache__
+case_mapping.json
+data/
+dir_test/
+fix_dirs.sh
+labelsysenv/
+output_nifti/
+output_nifti_seg/

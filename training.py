@@ -1,3 +1,5 @@
+from datamint.mlflow.lightning.callbacks import MLFlowModelCheckpoint
+from datamint.mlflow import set_project
 from datamint import Api 
 from TMJDataset import TMJDataset2D   
 from torch.utils.data import DataLoader
@@ -6,11 +8,10 @@ import torch
 from datamint.mlflow.lightning.callbacks import MLFlowModelCheckpoint
 from lightning.pytorch.loggers import MLFlowLogger
 from lightning.pytorch.callbacks import EarlyStopping
-from datamint.mlflow import set_project
 import lightning as L
 
 if __name__ == "__main__":    
-    PROJECT_NAME = "TMJ Study"
+    PROJECT_NAME = "TMJ Test"
     IMAGE_SIZE = 256
     NUM_CLASSES = 4
 
@@ -25,8 +26,6 @@ if __name__ == "__main__":
 
     all_resources = list(api.resources.get_list(project_name=PROJECT_NAME))
     all_resources.sort(key=lambda r: r.filename)
-    
-    all_resources = all_resources[:10]
 
     ''' Split the resources into training, validation, and test sets'''
     n_total = len(all_resources)
@@ -39,17 +38,17 @@ if __name__ == "__main__":
     
     print("Resources splitted...")
     
-    api.resources.add_tags(train_resources, ['split:train'])
-    api.resources.add_tags(val_resources, ['split:val'])
-    api.resources.add_tags(test_resources, ['split:test'])
+    #api.resources.add_tags(train_resources, ['split:train'])
+    #api.resources.add_tags(val_resources, ['split:val'])
+    #api.resources.add_tags(test_resources, ['split:test'])
 
     print(f"Total resources: {n_total}")
     print(f"Training: {len(train_resources)}")
     print(f"Validation: {len(val_resources)}")
     print(f"Test: {len(test_resources)}")
     
-    BATCH_SIZE = 16 
-    NUM_WORKERS = 4 
+    BATCH_SIZE = 32 
+    NUM_WORKERS = 8  
 
     ''' Create datasets '''
     print("Building training dataset...")
@@ -97,22 +96,23 @@ if __name__ == "__main__":
     print(f"Number of classes: {NUM_CLASSES}, Image size: {IMAGE_SIZE}x{IMAGE_SIZE}")
     
     model = UNetPPModule(
-    num_classes=NUM_CLASSES,
-    encoder_name='resnet34',  
-    learning_rate=1e-4,
+        num_classes=NUM_CLASSES,
+        encoder_name='resnet34',  
+        learning_rate=1e-4,
     )
 
     print("Model initialized.")
     print("Testing model forward pass and loss computation...")
     
     with torch.no_grad():
-        sample_input = torch.randn(1, 3, IMAGE_SIZE, IMAGE_SIZE)
+        sample_input = torch.randn(1, 1, IMAGE_SIZE, IMAGE_SIZE)
         sample_output = model(sample_input)
         print(f"Input shape: {sample_input.shape}")
         print(f"Output shape: {sample_output.shape}")
 
-        # test loss computation
         sample_target = train_dataloader.dataset[-1]['mask']  # (1, H, W)
+        print("logits:", sample_output.shape)
+        print("target:", sample_target.shape)
         sample_loss = model.criterion(sample_output, sample_target.unsqueeze(0))
         print(f"Sample loss: {sample_loss.item():.4f}")
 
@@ -134,24 +134,26 @@ if __name__ == "__main__":
     )
 
     ''' Early stopping callback '''
-    early_stop_callback = EarlyStopping(
-        monitor="val/iou",
-        mode="max",
-        patience=10                          # Stop if no improvement for 10 epochs
-    )
+    #early_stop_callback = EarlyStopping(
+    #    monitor="val/iou",
+    #    mode="max",
+    #    patience=10                          # Stop if no improvement for 10 epochs
+    #)
+
+    # callbacks=[checkpoint_callback, early_stop_callback],
 
     ''' MLflow logger '''
     mlflow_logger = MLFlowLogger(
         experiment_name=f"{PROJECT_NAME}_training",
-        run_name="unetpp_resnet34_busi",
+        run_name="unetpp_resnet34_first_training",
     )
 
     print("Training callbacks configured.")    
     print("Setting up trainer...")
     trainer = L.Trainer(
-        max_epochs=50,                        # Maximum training epochs
+        max_epochs=1000,                        # Maximum training epochs
         logger=mlflow_logger,                 # MLflow logging
-        callbacks=[checkpoint_callback, early_stop_callback],
+        callbacks=[checkpoint_callback],
         accelerator='auto',                   # Auto-detect GPU/CPU
         devices=1,                            # Single device
         precision='16-mixed',                 # Mixed precision for faster training
@@ -165,9 +167,6 @@ if __name__ == "__main__":
         train_dataloaders=train_dataloader,
         val_dataloaders=val_dataloader,
     )
-    
-    print("Opening project in DataMint... (Browser will open)")
-    proj.show()
     
     print("🔍 Evaluating on test set...")
     test_results = trainer.test(dataloaders=test_dataloader)

@@ -27,7 +27,7 @@ INPUT_DIR = "data"
 LBL_NUM = {"Disc": 1, "Condyle": 2, "Eminence": 3}
 SEQ_ARR_T = Union[List[np.ndarray], np.ndarray]  
 
-""" Reference: https://github.com/aswahd/TMJ-Disk-Dislocation-Classification/blob/main/nnUNetTMJ/datasetConversion/prepareDatasets_TMJ.py"""
+""" Taken from: https://github.com/aswahd/TMJ-Disk-Dislocation-Classification/blob/main/nnUNetTMJ/datasetConversion/prepareDatasets_TMJ.py"""
 def _resize(images: SEQ_ARR_T, masks: SEQ_ARR_T) -> Tuple[SEQ_ARR_T, SEQ_ARR_T]:
     """Resize images and masks
 
@@ -56,7 +56,7 @@ def _resize(images: SEQ_ARR_T, masks: SEQ_ARR_T) -> Tuple[SEQ_ARR_T, SEQ_ARR_T]:
     )
     return images, masks
 
-""" Reference: https://github.com/aswahd/TMJ-Disk-Dislocation-Classification/blob/main/nnUNetTMJ/datasetConversion/prepareDatasets_TMJ.py"""
+""" Taken from: https://github.com/aswahd/TMJ-Disk-Dislocation-Classification/blob/main/nnUNetTMJ/datasetConversion/prepareDatasets_TMJ.py"""
 def generateData(
     ori_data_path: str, out_img_dir: str, out_seg_dir: str, unique_name: str
 ):

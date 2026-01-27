@@ -4,7 +4,9 @@ import torch.nn as nn
 from torch.nn.functional import one_hot, softmax
 import numpy as np
 
-
+"""
+    Taken from: https://github.com/aswahd/TMJ-Disk-Dislocation-Classification/blob/main/UNetPPTMJ/dataloading/TMJDataset.py
+"""
 class BinaryDiceLoss(nn.Module):
     def __init__(self):
         super(BinaryDiceLoss, self).__init__()
@@ -51,6 +53,8 @@ class DiceLoss(nn.Module):
         else:
             weights = torch.tensor(self.weights)
         weights = weights / weights.sum()
+        
+        target = target.to(input.device)
         target = oneHot(target, n_classes=nclass)
 
         assert input.shape == target.shape, "predict & target shape do not match"
@@ -73,23 +77,24 @@ class DiceLoss(nn.Module):
         return total_loss
 
 
-def oneHot(targets, n_classes, gpu=True):
-    """Targets: shape - [N, H, W]"""
-    targets_extend = targets.clone()
-    targets_extend.unsqueeze_(1)  # convert to Nx1xHxW
-    if gpu:
-        one_hot = torch.cuda.FloatTensor(
-            targets_extend.size(0),
-            n_classes,
-            targets_extend.size(2),
-            targets_extend.size(3),
-        ).zero_()
-    else:
-        one_hot = torch.FloatTensor(
-            targets_extend.size(0),
-            n_classes,
-            targets_extend.size(2),
-            targets_extend.size(3),
-        ).zero_()
-    one_hot.scatter_(1, targets_extend, 1)
+def oneHot(targets: torch.Tensor, n_classes: int):
+    """
+    targets: (N, H, W) - torch.long
+    returns: (N, C, H, W) - one-hot encoded
+    """
+    device = targets.device
+
+    targets = targets.long()
+    targets = targets.unsqueeze(1)  # (N,1,H,W)
+
+    one_hot = torch.zeros(
+        targets.size(0),
+        n_classes,
+        targets.size(2),
+        targets.size(3),
+        device=device,
+        dtype=torch.float32,
+    )
+
+    one_hot.scatter_(1, targets, 1.0)
     return one_hot
