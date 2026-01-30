@@ -8,7 +8,6 @@ import os
 import nibabel as nib
 import torchvision.transforms.functional as torchTF
 from torchvision.transforms.functional import InterpolationMode
-
 from datamint import Api
 
 PROJECT_NAME = "TMJ Test"
@@ -21,12 +20,14 @@ class TMJDataset2D(Dataset):
         self,
         split: str | None = None,
         use_augmentation: bool = True,
-    ):
+    ):  
         super().__init__()
+        self.split = split
         self._mask_tmp_dir = os.path.join(
             os.environ.get("SCRATCH", "/tmp"),
             "tmj_mask_cache"
         )
+        
         os.makedirs(self._mask_tmp_dir, exist_ok=True)
         self.num_classes = NUM_CLASSES
         self.augmentation = use_augmentation and (split == "train")
@@ -52,7 +53,6 @@ class TMJDataset2D(Dataset):
         for ann in all_annotations:
             self.resource_annotations[ann.resource_id].append(ann)
             
-        self.slice_index = []
         self._volume_cache = {}
         self._mask_volume_cache = {}
 
@@ -64,12 +64,8 @@ class TMJDataset2D(Dataset):
                 raise RuntimeError(
                     f"Resource {resource.filename} is not 3D (shape={vol_np.shape})"
                 )
-
-            num_slices = vol_np.shape[0]
+                
             self._volume_cache[resource.id] = vol_np
-
-            for z in range(num_slices):
-                self.slice_index.append((resource.id, z))
 
         for resource_id, anns in self.resource_annotations.items():
             self._mask_volume_cache[resource_id] = []
@@ -106,21 +102,30 @@ class TMJDataset2D(Dataset):
                         f"resource={resource_id} ann={ann.id} err={e}"
                     )
 
+            ''' Building Slice Index '''
+        self.slice_index = []
+
+        for resource in self.resources:
+            vol = self._volume_cache[resource.id]
+            Z = vol.shape[2]
+
+            for z in range(Z):
+                self.slice_index.append((resource.id, z))
+                            
     def __len__(self):
         return len(self.slice_index)
 
     def __getitem__(self, idx):
         resource_id, slice_idx = self.slice_index[idx]
 
-        ''' Get resource and cached volume '''
-        resource = self._resource_map[resource_id]
+        ''' Load corresponding image slice '''
         vol = self._volume_cache[resource_id]
 
-        image = vol[slice_idx, :, :].astype(np.float32)
+        image = vol[:, :, slice_idx].astype(np.float32)
 
         original_height, original_width = image.shape
 
-        ''' Load segmentation masks (union if multiple) '''
+        ''' Load corresponding mask '''
         cached_masks = self._mask_volume_cache.get(resource_id, [])
 
         if not cached_masks:
@@ -129,17 +134,19 @@ class TMJDataset2D(Dataset):
             masks = []
 
             for vol in cached_masks:
-                if vol.ndim == 3:
-                    masks.append(vol[slice_idx])
+                if vol.ndim == 3 and slice_idx < vol.shape[2]:
+                    masks.append(vol[:,:, slice_idx])
                 elif vol.ndim == 2:
                     masks.append(vol)
-
-            if len(masks) == 0:
-                mask = np.zeros((original_height, original_width), dtype=np.int64)
-            else:
-                mask = np.maximum.reduce(masks)
-
+                    
+            
+            mask = np.maximum.reduce(masks) if masks else np.zeros((original_height, original_width), dtype=np.int64)
         
+
+        image = np.rot90(image, k=3)
+        mask  = np.rot90(mask, k=3)
+        image = np.flip(image, axis=1) 
+        mask  = np.flip(mask, axis=1)
         image = cv2.resize(image, (256, 256), interpolation=cv2.INTER_LINEAR)
         mask  = cv2.resize(mask,  (256, 256), interpolation=cv2.INTER_NEAREST)
         
@@ -149,21 +156,19 @@ class TMJDataset2D(Dataset):
         image = np.clip(image, vmin, vmax)
         image = (image - vmin) / (vmax - vmin + 1e-8)
 
-    
         image = torch.from_numpy(image).unsqueeze(0).float()  # (1, H, W)
         mask = torch.from_numpy(mask).long()                  # (H, W)
 
-        ''' Data Augmentation '''
+        ''' Data augmentation '''
         if self.augmentation:
             image, mask = self.randomTransform(image, mask)
 
         return {
             "image": image,
             "mask": mask,
-            "filename": f"{resource.filename}_z{slice_idx:03d}",
+            "filename": f"{resource_id}_z{slice_idx:03d}",
         }
 
-    # ---------------------------------------------------------------------------------------------------------------------------------
     """
     Taken from: https://github.com/aswahd/TMJ-Disk-Dislocation-Classification/blob/main/UNetPPTMJ/dataloading/TMJDataset.py
     Apply random transformations to the image and label.

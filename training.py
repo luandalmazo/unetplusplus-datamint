@@ -47,7 +47,7 @@ if __name__ == "__main__":
     print(f"Validation: {len(val_resources)}")
     print(f"Test: {len(test_resources)}")
     
-    BATCH_SIZE = 32 
+    BATCH_SIZE = 36 
     NUM_WORKERS = 8  
 
     ''' Create datasets '''
@@ -124,7 +124,7 @@ if __name__ == "__main__":
     
     ''' Model checkpoint callback'''
     checkpoint_callback = MLFlowModelCheckpoint(
-        monitor="val/iou",                    # Metric to monitor
+        monitor="val/dice",                    # Metric to monitor
         mode="max",                           # Save when metric increases
         save_top_k=1,                         # Keep only the best model
         filename="best_unetpp",               # Checkpoint filename
@@ -156,7 +156,6 @@ if __name__ == "__main__":
         callbacks=[checkpoint_callback],
         accelerator='auto',                   # Auto-detect GPU/CPU
         devices=1,                            # Single device
-        precision='16-mixed',                 # Mixed precision for faster training
         log_every_n_steps=10,                 # Log frequency
         num_sanity_val_steps=2,               # Validation sanity check
     )

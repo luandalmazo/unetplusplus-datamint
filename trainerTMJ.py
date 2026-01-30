@@ -2,7 +2,6 @@ import torch
 import lightning as L
 import segmentation_models_pytorch as smp
 from torchmetrics.segmentation import MeanIoU, GeneralizedDiceScore
-
 from losses import DiceLoss, FusionLoss, FocalLoss
 from learningRate import CyclicLR, WarmUpLR, CosineLR  
     
@@ -43,7 +42,7 @@ class UNetPPModule(L.LightningModule):
 
         loss_fn0 = DiceLoss(weights=[0.1, 5, 1, 1], use_softmax=True)
         loss_fn1 = FocalLoss(gamma=3)
-        self.criterion = FusionLoss([loss_fn0, loss_fn1], weights=[0.5, 0.5], device="cpu")  # device set in setup()
+        self.criterion = FusionLoss([loss_fn0, loss_fn1], weights=[0.5, 0.5], device="cpu")  
 
         self.iou_metrics = {
             "train": MeanIoU(num_classes=num_classes, per_class=False),
